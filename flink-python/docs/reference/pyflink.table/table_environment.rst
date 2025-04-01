@@ -162,6 +162,8 @@ keyword, thus must be escaped) in a catalog named 'cat.1' and database named 'db
     TableEnvironment.create_temporary_table
     TableEnvironment.create_temporary_view
     TableEnvironment.create_view
+    TableEnvironment.create_model
+    TableEnvironment.create_temporary_model
     TableEnvironment.drop_function
     TableEnvironment.drop_table
     TableEnvironment.drop_temporary_function
@@ -169,6 +171,8 @@ keyword, thus must be escaped) in a catalog named 'cat.1' and database named 'db
     TableEnvironment.drop_temporary_table
     TableEnvironment.drop_temporary_view
     TableEnvironment.drop_view
+    TableEnvironment.drop_model
+    TableEnvironment.drop_temporary_model
     TableEnvironment.execute_sql
     TableEnvironment.explain_sql
     TableEnvironment.from_descriptor
@@ -189,6 +193,8 @@ keyword, thus must be escaped) in a catalog named 'cat.1' and database named 'db
     TableEnvironment.list_temporary_views
     TableEnvironment.list_user_defined_functions
     TableEnvironment.list_views
+    TableEnvironment.list_models
+    TableEnvironment.list_temporary_models
     TableEnvironment.load_module
     TableEnvironment.create_catalog
     TableEnvironment.register_catalog
