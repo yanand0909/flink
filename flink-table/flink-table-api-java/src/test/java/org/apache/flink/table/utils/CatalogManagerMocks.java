@@ -27,6 +27,7 @@ import org.apache.flink.table.catalog.CatalogStore;
 import org.apache.flink.table.catalog.CatalogStoreHolder;
 import org.apache.flink.table.catalog.GenericInMemoryCatalog;
 import org.apache.flink.table.catalog.GenericInMemoryCatalogStore;
+import org.apache.flink.table.secret.GenericInMemorySecretStore;
 
 import javax.annotation.Nullable;
 
@@ -70,10 +71,15 @@ public final class CatalogManagerMocks {
         if (catalogStoreHolder != null) {
             builder.catalogStoreHolder(catalogStoreHolder);
         }
-        final CatalogManager catalogManager = builder.build();
-        catalogManager.initSchemaResolver(
-                true, ExpressionResolverMocks.dummyResolver(), new ParserMock());
-        return catalogManager;
+        return buildAndInitSchemaResolver(builder);
+    }
+
+    /**
+     * Creates a {@link CatalogManager} whose secret store is not writable, as when a session is
+     * configured with a read-only {@link org.apache.flink.table.secret.SecretStore}.
+     */
+    public static CatalogManager createCatalogManagerWithoutSecretStore() {
+        return buildAndInitSchemaResolver(preparedCatalogManager().writableSecretStore(null));
     }
 
     public static CatalogManager.Builder preparedCatalogManager() {
@@ -87,7 +93,17 @@ public final class CatalogManagerMocks {
                                 .config(new Configuration())
                                 .catalogStore(new GenericInMemoryCatalogStore())
                                 .build())
+                // Mirrors the production default, where table.secret-store.kind resolves to
+                // GenericInMemorySecretStore, which is a WritableSecretStore.
+                .writableSecretStore(new GenericInMemorySecretStore())
                 .executionConfig(new ExecutionConfig());
+    }
+
+    private static CatalogManager buildAndInitSchemaResolver(CatalogManager.Builder builder) {
+        final CatalogManager catalogManager = builder.build();
+        catalogManager.initSchemaResolver(
+                true, ExpressionResolverMocks.dummyResolver(), new ParserMock());
+        return catalogManager;
     }
 
     public static Catalog createEmptyCatalog() {

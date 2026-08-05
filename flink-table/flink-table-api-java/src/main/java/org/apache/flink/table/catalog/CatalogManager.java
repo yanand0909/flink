@@ -1925,6 +1925,15 @@ public final class CatalogManager implements CatalogRegistry, AutoCloseable {
     }
 
     /**
+     * List all connections in the current catalog and database.
+     *
+     * @return A set of connection names.
+     */
+    public Set<String> listConnections() {
+        return listConnections(getCurrentCatalog(), getCurrentDatabase());
+    }
+
+    /**
      * List all connections in the given catalog and database.
      *
      * @param catalogName The name of the catalog.
@@ -2131,12 +2140,13 @@ public final class CatalogManager implements CatalogRegistry, AutoCloseable {
      * @param objectIdentifier The fully qualified path of the connection to be dropped.
      * @param ignoreIfNotExists If false exception will be thrown if the connection to be dropped
      *     does not exist.
+     * @return true if the connection existed in the given path and was dropped.
      */
-    public void dropConnection(ObjectIdentifier objectIdentifier, boolean ignoreIfNotExists) {
+    public boolean dropConnection(ObjectIdentifier objectIdentifier, boolean ignoreIfNotExists) {
         Optional<CatalogConnection> existingOpt = getConnection(objectIdentifier);
         if (!existingOpt.isPresent()) {
             if (ignoreIfNotExists) {
-                return;
+                return false;
             }
             throw new ValidationException(
                     String.format(
@@ -2166,6 +2176,7 @@ public final class CatalogManager implements CatalogRegistry, AutoCloseable {
             tryDeleteSecrets(
                     existing, writableSecretStore, "post-drop cleanup for " + objectIdentifier);
         }
+        return true;
     }
 
     /**

@@ -18,6 +18,7 @@
 
 package org.apache.flink.table.api;
 
+import org.apache.flink.table.catalog.Catalog;
 import org.apache.flink.table.catalog.CatalogBaseTable;
 import org.apache.flink.table.catalog.CatalogModel;
 import org.apache.flink.table.catalog.CatalogTable;
@@ -38,6 +39,9 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import javax.annotation.Nullable;
+
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -70,10 +74,35 @@ class TableEnvironmentTest {
                     .outputSchema(TEST_SCHEMA_2)
                     .build();
 
+    private static final ConnectionDescriptor TEST_CONNECTION_DESCRIPTOR =
+            ConnectionDescriptor.forType("default")
+                    .option("bootstrap.servers", "localhost:9092")
+                    .option("password", "s3cr3t")
+                    .comment("Test Connection Comment")
+                    .build();
+    private static final ConnectionDescriptor TEST_CONNECTION_DESCRIPTOR_2 =
+            TEST_CONNECTION_DESCRIPTOR.toBuilder()
+                    .option("bootstrap.servers", "remote:9092")
+                    .build();
+
     private static Stream<Arguments> getModelNamesAndDescriptors() {
         return Stream.of(
                 Arguments.of("M", TEST_MODEL_DESCRIPTOR),
                 Arguments.of("M2", TEST_MODEL_DESCRIPTOR_2));
+    }
+
+    private static Stream<Arguments> getConnectionDuplicateArguments() {
+        return Stream.of(
+                Arguments.of(false, true, null),
+                Arguments.of(
+                        false,
+                        false,
+                        "Connection with identifier 'default_catalog.default_database.C' already exists."),
+                Arguments.of(true, true, null),
+                Arguments.of(
+                        true,
+                        false,
+                        "Temporary connection '`default_catalog`.`default_database`.`C`' already exists."));
     }
 
     @BeforeEach
@@ -256,6 +285,174 @@ class TableEnvironmentTest {
         tEnv.createModel("M2", TEST_MODEL_DESCRIPTOR);
 
         assertThat(tEnv.listModels()).containsExactly("M1", "M2");
+    }
+
+    @ParameterizedTest(name = "{index}: temporary ({0})")
+    @ValueSource(booleans = {true, false})
+    void testCreateConnectionFromDescriptor(boolean temporary) throws Exception {
+        final String database = tEnv.getCurrentDatabase();
+        final Catalog catalog =
+                tEnv.getCatalog(tEnv.getCurrentCatalog()).orElseThrow(AssertionError::new);
+        assertThat(catalog.listConnections(database)).isEmpty();
+
+        createConnection(tEnv, "C", TEST_CONNECTION_DESCRIPTOR, temporary, false);
+
+        assertThat(tEnv.listConnections()).containsExactly("C");
+        assertThat(catalog.listConnections(database))
+                .isEqualTo(temporary ? List.of() : List.of("C"));
+        assertThat(tEnv.getCatalogManager().getConnection(connectionIdentifier(tEnv, "C")))
+                .hasValueSatisfying(
+                        connection -> {
+                            assertThat(connection.getComment())
+                                    .isEqualTo("Test Connection Comment");
+                            assertThat(connection.getOptions())
+                                    .contains(
+                                            entry("type", "default"),
+                                            entry("bootstrap.servers", "localhost:9092"))
+                                    .doesNotContainKey("password")
+                                    .doesNotContainValue("s3cr3t");
+                        });
+    }
+
+    @ParameterizedTest(name = "{index}: temporary ({0}), ignoreIfExists ({1})")
+    @MethodSource("getConnectionDuplicateArguments")
+    void testCreateConnectionWithSameName(
+            boolean temporary, boolean ignoreIfExists, @Nullable String expectedMessage) {
+        createConnection(tEnv, "C", TEST_CONNECTION_DESCRIPTOR, temporary, false);
+        assertThat(tEnv.listConnections()).containsExactly("C");
+
+        if (expectedMessage == null) {
+            assertThatNoException()
+                    .isThrownBy(
+                            () ->
+                                    createConnection(
+                                            tEnv,
+                                            "C",
+                                            TEST_CONNECTION_DESCRIPTOR_2,
+                                            temporary,
+                                            ignoreIfExists));
+        } else {
+            assertThatThrownBy(
+                            () ->
+                                    createConnection(
+                                            tEnv,
+                                            "C",
+                                            TEST_CONNECTION_DESCRIPTOR_2,
+                                            temporary,
+                                            ignoreIfExists))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessage(expectedMessage);
+        }
+
+        assertThat(tEnv.getCatalogManager().getConnection(connectionIdentifier(tEnv, "C")))
+                .hasValueSatisfying(
+                        connection ->
+                                assertThat(connection.getOptions())
+                                        .containsEntry("bootstrap.servers", "localhost:9092"));
+    }
+
+    @ParameterizedTest(name = "{index}: temporary ({0})")
+    @ValueSource(booleans = {true, false})
+    void testDropConnection(boolean temporary) throws Exception {
+        final String database = tEnv.getCurrentDatabase();
+        final Catalog catalog =
+                tEnv.getCatalog(tEnv.getCurrentCatalog()).orElseThrow(AssertionError::new);
+
+        createConnection(tEnv, "C", TEST_CONNECTION_DESCRIPTOR, temporary, false);
+        assertThat(tEnv.listConnections()).containsExactly("C");
+        assertThat(tEnv.getCatalogManager().getConnection(connectionIdentifier(tEnv, "C")))
+                .isPresent();
+        assertThat(catalog.listConnections(database))
+                .isEqualTo(temporary ? List.of() : List.of("C"));
+
+        assertThat(temporary ? tEnv.dropTemporaryConnection("C") : tEnv.dropConnection("C"))
+                .isTrue();
+
+        assertThat(tEnv.listConnections()).isEmpty();
+        assertThat(tEnv.getCatalogManager().getConnection(connectionIdentifier(tEnv, "C")))
+                .isEmpty();
+        assertThat(catalog.listConnections(database)).isEmpty();
+        assertThat(temporary ? tEnv.dropTemporaryConnection("C") : tEnv.dropConnection("C"))
+                .isFalse();
+    }
+
+    @Test
+    void testDropNonExistingConnection() {
+        assertThat(tEnv.listConnections()).isEmpty();
+
+        assertThat(tEnv.dropConnection("C")).isFalse();
+        assertThat(tEnv.dropTemporaryConnection("C")).isFalse();
+
+        assertThatThrownBy(() -> tEnv.dropConnection("C", false))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage(
+                        "Connection with identifier 'default_catalog.default_database.C' does not exist.");
+    }
+
+    @Test
+    void testCreateConnectionWithoutWritableSecretStore() {
+        final TableEnvironmentMock tEnvWithoutSecretStore =
+                TableEnvironmentMock.getStreamingInstanceWithoutSecretStore();
+
+        assertThatThrownBy(
+                        () ->
+                                tEnvWithoutSecretStore.createConnection(
+                                        "C", TEST_CONNECTION_DESCRIPTOR))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("WritableSecretStore must be configured to create connections.");
+        assertThat(tEnvWithoutSecretStore.listConnections()).isEmpty();
+
+        // Temporary connections keep their secrets in a session-scoped store, so they do not need a
+        // configured one.
+        tEnvWithoutSecretStore.createTemporaryConnection("C", TEST_CONNECTION_DESCRIPTOR);
+        assertThat(tEnvWithoutSecretStore.listConnections()).containsExactly("C");
+    }
+
+    @Test
+    void testListConnections() {
+        tEnv.createConnection("C2", TEST_CONNECTION_DESCRIPTOR);
+        tEnv.createTemporaryConnection("C1", TEST_CONNECTION_DESCRIPTOR);
+
+        assertThat(tEnv.listConnections()).containsExactly("C1", "C2");
+    }
+
+    @Test
+    void testConnectionNullArguments() {
+        assertThatThrownBy(() -> tEnv.createConnection(null, TEST_CONNECTION_DESCRIPTOR))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("Path must not be null.");
+        assertThatThrownBy(() -> tEnv.createConnection("C", null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("Connection descriptor must not be null.");
+        assertThatThrownBy(() -> tEnv.createTemporaryConnection(null, TEST_CONNECTION_DESCRIPTOR))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("Path must not be null.");
+        assertThatThrownBy(() -> tEnv.createTemporaryConnection("C", null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("Connection descriptor must not be null.");
+        assertThatThrownBy(() -> tEnv.dropConnection(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("Path must not be null.");
+        assertThatThrownBy(() -> tEnv.dropTemporaryConnection(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("Path must not be null.");
+    }
+
+    private static void createConnection(
+            TableEnvironmentMock tEnv,
+            String path,
+            ConnectionDescriptor descriptor,
+            boolean temporary,
+            boolean ignoreIfExists) {
+        if (temporary) {
+            tEnv.createTemporaryConnection(path, descriptor, ignoreIfExists);
+        } else {
+            tEnv.createConnection(path, descriptor, ignoreIfExists);
+        }
+    }
+
+    private static ObjectIdentifier connectionIdentifier(TableEnvironmentMock tEnv, String name) {
+        return ObjectIdentifier.of(tEnv.getCurrentCatalog(), tEnv.getCurrentDatabase(), name);
     }
 
     private static void assertCreateTableFromDescriptor(

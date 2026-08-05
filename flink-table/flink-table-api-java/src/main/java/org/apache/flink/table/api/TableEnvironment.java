@@ -29,6 +29,7 @@ import org.apache.flink.table.catalog.CatalogDescriptor;
 import org.apache.flink.table.catalog.CatalogModel;
 import org.apache.flink.table.catalog.CatalogStore;
 import org.apache.flink.table.catalog.CatalogTable;
+import org.apache.flink.table.catalog.SensitiveConnection;
 import org.apache.flink.table.expressions.Expression;
 import org.apache.flink.table.functions.ProcessTableFunction;
 import org.apache.flink.table.functions.ScalarFunction;
@@ -1009,6 +1010,91 @@ public interface TableEnvironment {
     void createTemporaryModel(String path, ModelDescriptor descriptor, boolean ignoreIfExists);
 
     /**
+     * Registers the given {@link ConnectionDescriptor} as a catalog connection similar to SQL
+     * connections.
+     *
+     * <p>The {@link ConnectionDescriptor descriptor} is converted into a {@link
+     * SensitiveConnection} whose secrets are extracted into the configured secret store before the
+     * remaining options are stored in the catalog. A secret store is required for permanent
+     * connections.
+     *
+     * <p>If the connection should not be permanently stored in a catalog, use {@link
+     * #createTemporaryConnection(String, ConnectionDescriptor)} instead.
+     *
+     * <p>Temporary objects can shadow permanent ones. If a temporary object in a given path exists,
+     * the permanent one will be inaccessible in the current session. To make the permanent object
+     * available again one can drop the corresponding temporary object.
+     *
+     * @param path The path under which the connection will be registered. See also the {@link
+     *     TableEnvironment} class description for the format of the path.
+     * @param descriptor The descriptor of the connection to register.
+     */
+    void createConnection(String path, ConnectionDescriptor descriptor);
+
+    /**
+     * Registers the given {@link ConnectionDescriptor} as a catalog connection similar to SQL
+     * connections.
+     *
+     * <p>The {@link ConnectionDescriptor descriptor} is converted into a {@link
+     * SensitiveConnection} whose secrets are extracted into the configured secret store before the
+     * remaining options are stored in the catalog. A secret store is required for permanent
+     * connections.
+     *
+     * <p>If the connection should not be permanently stored in a catalog, use {@link
+     * #createTemporaryConnection(String, ConnectionDescriptor)} instead.
+     *
+     * <p>Temporary objects can shadow permanent ones. If a temporary object in a given path exists,
+     * the permanent one will be inaccessible in the current session. To make the permanent object
+     * available again one can drop the corresponding temporary object.
+     *
+     * @param path The path under which the connection will be registered. See also the {@link
+     *     TableEnvironment} class description for the format of the path.
+     * @param descriptor Template for creating a {@link SensitiveConnection} instance.
+     * @param ignoreIfExists If a connection exists and the given flag is set, no operation is
+     *     executed. An exception is thrown otherwise.
+     */
+    void createConnection(String path, ConnectionDescriptor descriptor, boolean ignoreIfExists);
+
+    /**
+     * Registers the given {@link ConnectionDescriptor} as a temporary catalog connection similar to
+     * SQL connections.
+     *
+     * <p>The {@link ConnectionDescriptor descriptor} is converted into a {@link
+     * SensitiveConnection} whose secrets are extracted into a session-scoped in-memory secret
+     * store.
+     *
+     * <p>Temporary objects can shadow permanent ones. If a permanent object in a given path exists,
+     * it will be inaccessible in the current session. To make the permanent object available again
+     * one can drop the corresponding temporary object.
+     *
+     * @param path The path under which the connection will be registered. See also the {@link
+     *     TableEnvironment} class description for the format of the path.
+     * @param descriptor Template for creating a {@link SensitiveConnection} instance.
+     */
+    void createTemporaryConnection(String path, ConnectionDescriptor descriptor);
+
+    /**
+     * Registers the given {@link ConnectionDescriptor} as a temporary catalog connection similar to
+     * SQL connections.
+     *
+     * <p>The {@link ConnectionDescriptor descriptor} is converted into a {@link
+     * SensitiveConnection} whose secrets are extracted into a session-scoped in-memory secret
+     * store.
+     *
+     * <p>Temporary objects can shadow permanent ones. If a permanent object in a given path exists,
+     * it will be inaccessible in the current session. To make the permanent object available again
+     * one can drop the corresponding temporary object.
+     *
+     * @param path The path under which the connection will be registered. See also the {@link
+     *     TableEnvironment} class description for the format of the path.
+     * @param descriptor Template for creating a {@link SensitiveConnection} instance.
+     * @param ignoreIfExists If a connection exists and the given flag is set, no operation is
+     *     executed. An exception is thrown otherwise.
+     */
+    void createTemporaryConnection(
+            String path, ConnectionDescriptor descriptor, boolean ignoreIfExists);
+
+    /**
      * Scans a registered table and returns the resulting {@link Table}.
      *
      * <p>A table to scan must be registered in the {@link TableEnvironment}. It can be either
@@ -1336,6 +1422,15 @@ public interface TableEnvironment {
     String[] listTemporaryModels();
 
     /**
+     * Gets the names of all connections available in the current namespace (the current database of
+     * the current catalog). It returns both temporary and permanent connections.
+     *
+     * @return A list of the names of all registered connections in the current database of the
+     *     current catalog.
+     */
+    String[] listConnections();
+
+    /**
      * Drops a temporary table registered in the given path.
      *
      * <p>If a permanent table with a given path exists, it will be used from now on for any queries
@@ -1466,6 +1561,48 @@ public interface TableEnvironment {
      * @return true if a model existed in the given path and was removed
      */
     boolean dropTemporaryModel(String path);
+
+    /**
+     * Drops a connection registered in the given path.
+     *
+     * <p>This method can only drop permanent objects. Temporary objects can shadow permanent ones.
+     * If a temporary object exists in a given path, make sure to drop the temporary object first
+     * using {@link #dropTemporaryConnection}.
+     *
+     * @param path The given path under which the connection will be dropped. See also the {@link
+     *     TableEnvironment} class description for the format of the path.
+     * @return true if connection existed in the given path and was dropped, false if connection
+     *     didn't exist in the given path.
+     */
+    boolean dropConnection(String path);
+
+    /**
+     * Drops a connection registered in the given path.
+     *
+     * <p>This method can only drop permanent objects. Temporary objects can shadow permanent ones.
+     * If a temporary object exists in a given path, make sure to drop the temporary object first
+     * using {@link #dropTemporaryConnection}.
+     *
+     * @param path The given path under which the connection will be dropped. See also the {@link
+     *     TableEnvironment} class description for the format of the path.
+     * @param ignoreIfNotExists If false exception will be thrown if the connection to drop does not
+     *     exist.
+     * @return true if connection existed in the given path and was dropped, false if connection
+     *     didn't exist in the given path.
+     */
+    boolean dropConnection(String path, boolean ignoreIfNotExists);
+
+    /**
+     * Drops a temporary connection registered in the given path.
+     *
+     * <p>If a permanent connection with a given path exists, it will be used from now on for any
+     * queries that reference this path.
+     *
+     * @param path The given path under which the temporary connection will be dropped. See also the
+     *     {@link TableEnvironment} class description for the format of the path.
+     * @return true if a connection existed in the given path and was removed
+     */
+    boolean dropTemporaryConnection(String path);
 
     /**
      * Returns the AST of the specified statement and the execution plan to compute the result of

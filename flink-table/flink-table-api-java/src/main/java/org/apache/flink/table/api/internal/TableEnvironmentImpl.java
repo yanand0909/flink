@@ -27,6 +27,7 @@ import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.core.execution.JobStatusHook;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.table.api.CompiledPlan;
+import org.apache.flink.table.api.ConnectionDescriptor;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.ExplainDetail;
@@ -650,6 +651,36 @@ public class TableEnvironmentImpl implements TableEnvironmentInternal {
     }
 
     @Override
+    public void createConnection(
+            String path, ConnectionDescriptor descriptor, boolean ignoreIfExists) {
+        Preconditions.checkNotNull(path, "Path must not be null.");
+        Preconditions.checkNotNull(descriptor, "Connection descriptor must not be null.");
+        final ObjectIdentifier objectIdentifier = getObjectIdentifierFromPath(path);
+        catalogManager.createConnection(
+                descriptor.toSensitiveConnection(), objectIdentifier, ignoreIfExists);
+    }
+
+    @Override
+    public void createConnection(String path, ConnectionDescriptor descriptor) {
+        createConnection(path, descriptor, false);
+    }
+
+    @Override
+    public void createTemporaryConnection(String path, ConnectionDescriptor descriptor) {
+        createTemporaryConnection(path, descriptor, false);
+    }
+
+    @Override
+    public void createTemporaryConnection(
+            String path, ConnectionDescriptor descriptor, boolean ignoreIfExists) {
+        Preconditions.checkNotNull(path, "Path must not be null.");
+        Preconditions.checkNotNull(descriptor, "Connection descriptor must not be null.");
+        final ObjectIdentifier objectIdentifier = getObjectIdentifierFromPath(path);
+        catalogManager.createTemporaryConnection(
+                descriptor.toSensitiveConnection(), objectIdentifier, ignoreIfExists);
+    }
+
+    @Override
     public Table scan(String... tablePath) {
         UnresolvedIdentifier unresolvedIdentifier = UnresolvedIdentifier.of(tablePath);
         return scanInternal(unresolvedIdentifier)
@@ -857,6 +888,30 @@ public class TableEnvironmentImpl implements TableEnvironmentInternal {
     }
 
     @Override
+    public boolean dropConnection(String path) {
+        return dropConnection(path, true);
+    }
+
+    @Override
+    public boolean dropConnection(String path, boolean ignoreIfNotExists) {
+        Preconditions.checkNotNull(path, "Path must not be null.");
+        ObjectIdentifier objectIdentifier = getObjectIdentifierFromPath(path);
+        return catalogManager.dropConnection(objectIdentifier, ignoreIfNotExists);
+    }
+
+    @Override
+    public boolean dropTemporaryConnection(String path) {
+        Preconditions.checkNotNull(path, "Path must not be null.");
+        ObjectIdentifier objectIdentifier = getObjectIdentifierFromPath(path);
+        try {
+            catalogManager.dropTemporaryConnection(objectIdentifier, false);
+            return true;
+        } catch (ValidationException e) {
+            return false;
+        }
+    }
+
+    @Override
     public String[] listUserDefinedFunctions() {
         String[] functions = functionCatalog.getUserDefinedFunctions();
         Arrays.sort(functions);
@@ -878,6 +933,11 @@ public class TableEnvironmentImpl implements TableEnvironmentInternal {
     @Override
     public String[] listTemporaryModels() {
         return catalogManager.listTemporaryModels().stream().sorted().toArray(String[]::new);
+    }
+
+    @Override
+    public String[] listConnections() {
+        return catalogManager.listConnections().stream().sorted().toArray(String[]::new);
     }
 
     @Override

@@ -45,6 +45,13 @@ class TableEnvironmentAPICompletenessTests(PythonAPICompletenessTestCase, PyFlin
             "registerFunction",
             "fromCall",
             "fromModel",
+            # TODO(FLINK-38259): connections need a Python ConnectionDescriptor and SecretStore
+            # binding before they can be exposed in the Python Table API.
+            "createConnection",
+            "createTemporaryConnection",
+            "dropConnection",
+            "dropTemporaryConnection",
+            "listConnections",
         }
 
 

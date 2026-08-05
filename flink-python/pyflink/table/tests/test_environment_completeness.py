@@ -49,7 +49,14 @@ class EnvironmentAPICompletenessTests(PythonAPICompletenessTestCase, PyFlinkTest
             'explainPlan',
             'registerFunction',
             'scan',
-            'registerTable'}
+            'registerTable',
+            # TODO(FLINK-38259): connections need a Python ConnectionDescriptor and
+            # SecretStore binding before they can be exposed in the Python Table API.
+            'createConnection',
+            'createTemporaryConnection',
+            'dropConnection',
+            'dropTemporaryConnection',
+            'listConnections'}
 
     @classmethod
     def java_method_name(cls, python_method_name):

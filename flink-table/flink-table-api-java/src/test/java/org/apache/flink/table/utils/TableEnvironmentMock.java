@@ -65,16 +65,20 @@ public class TableEnvironmentMock extends TableEnvironmentImpl {
     }
 
     public static TableEnvironmentMock getStreamingInstance() {
-        return getInstance(true);
+        return getInstance(true, CatalogManagerMocks.createEmptyCatalogManager());
     }
 
     public static TableEnvironmentMock getBatchInstance() {
-        return getInstance(false);
+        return getInstance(false, CatalogManagerMocks.createEmptyCatalogManager());
     }
 
-    private static TableEnvironmentMock getInstance(boolean isStreamingMode) {
+    public static TableEnvironmentMock getStreamingInstanceWithoutSecretStore() {
+        return getInstance(true, CatalogManagerMocks.createCatalogManagerWithoutSecretStore());
+    }
+
+    private static TableEnvironmentMock getInstance(
+            boolean isStreamingMode, CatalogManager catalogManager) {
         final TableConfig tableConfig = TableConfig.getDefault();
-        final CatalogManager catalogManager = CatalogManagerMocks.createEmptyCatalogManager();
         final ModuleManager moduleManager = new ModuleManager();
         final ResourceManager resourceManager =
                 ResourceManager.createResourceManager(
