@@ -508,7 +508,7 @@ class CatalogManagerTest {
                         catalogManager.getCurrentCatalog(),
                         catalogManager.getCurrentDatabase(),
                         "conn1");
-        catalogManager.dropConnection(oi, true);
+        assertThat(catalogManager.dropConnection(oi, true)).isTrue();
         DropConnectionEvent dropEvent = dropFuture.get(10, TimeUnit.SECONDS);
         assertThat(dropEvent.ignoreIfNotExists()).isTrue();
         assertThat(dropEvent.identifier().getObjectName()).isEqualTo("conn1");
@@ -579,6 +579,23 @@ class CatalogManagerTest {
         assertThat(event.connection().getOptions()).doesNotContainKey("password");
         assertThat(event.connection().getOptions())
                 .containsEntry("bootstrap.servers", "localhost:9092");
+    }
+
+    @Test
+    public void testDropNonExistingConnection() {
+        CatalogManager catalogManager = createCatalogManager(null);
+        ObjectIdentifier oi =
+                ObjectIdentifier.of(
+                        catalogManager.getCurrentCatalog(),
+                        catalogManager.getCurrentDatabase(),
+                        "conn1");
+
+        assertThat(catalogManager.getConnection(oi)).isEmpty();
+
+        assertThat(catalogManager.dropConnection(oi, true)).isFalse();
+        assertThatThrownBy(() -> catalogManager.dropConnection(oi, false))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Connection with identifier 'default.default.conn1' does not exist.");
     }
 
     private CatalogManager createCatalogManager(@Nullable CatalogModificationListener listener) {
